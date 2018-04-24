@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<svg width="960" height="500"></svg>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="//d3js.org/d3-scale-chromatic.v0.3.min.js"></script>
+<script>
+
+    // Simple map that shows Divvy trips in Chicago. Darker purple means more trips
+
+    // data was retreived from the Chicago Data Portal using the url:
+    // https://data.cityofchicago.org/resource/fg6s-gzvg.csv?$select=from_location,to_location,count(*)&$group=from_location,to_location&$limit=300000
+
+
+    // Location strings from Socrata are of the form "POINT (lon, lat)"
+    // we can just chop off the first 6 characters and the last then split it to get a lat lon array
+    var pointTextToLonLat = function (s) {
+        return s.substring(7, s.length - 1).split(' ');
+    };
+
+
+    // create our chart area
+    var svg = d3.select("svg"),
+        margin = {top: 20, right: 20, bottom: 30, left: 50},
+        width = +svg.attr("width") - margin.left - margin.right,
+        height = +svg.attr("height") - margin.top - margin.bottom,
+        g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    // read our csv file
+    d3.csv("station_to_station_table.csv", function (data) {
+
+        var maxValue = 0;
+
+        //  reduce our data into something nice --- some points have the same lat lon, so we'll just combine those
+        // we'll end up with a structure that looks like : {POINT(lon lat): {POINT(lonA latA}: 1 , POINT(lonB latB): 2}
+        // where the keys to the big map are from locations, the keys to the little maps are to locations, and the values
+        // of the little maps are the number of trips between them
+        //
+        // Also, we'll keep track of the maximum value
+        var stationGrid = data.reduce(function (acc, d) {
+            var from_locations = acc[d.from_location] || {};
+            var totalCount = (from_locations[d.to_location] || 0) + parseInt(d.count, 10);
+
+            if(totalCount > maxValue){
+                maxValue = totalCount;
+            }
+
+            from_locations[d.to_location] = totalCount;
+            acc[d.from_location] = from_locations;
+            return acc;
+        }, {});
+
+
+
+        // create a scale for opacity
+        var opacityScale = d3.scalePow()
+            .domain([0, maxValue])
+            .range([0,0.8])
+
+
+
+
+        // the function that will map our geography to coordinates on the map, the rotate and center values are latitude
+        // and longitude
+        var albersProjection = d3.geoAlbers()
+            .scale(70000)
+            .rotate([87.6298, 0])
+            .center([0, 40.8081])
+            .translate([width / 2, height / 2]);
+
+        var geoPath = d3.geoPath()
+            .projection(albersProjection);
+
+
+        // load our Geojson file and draw it, using our d3 geo function
+        d3.json("chicago_neighborhoods.geojson", function (data) {
+            svg.append("path")
+                .attr("d", geoPath(data))
+                .style("fill", "white")
+                .style('fill-opacity', '0.0')
+                .style('stroke', "black")
+                .style('stroke-width', '0.2')
+            ;
+        });
+
+
+
+
+        // // create our color scale,
+        // var colorScale = d3.scaleSequential(d3.interpolatePurples)
+        //     .domain([0, 100])
+
+
+        // for each from location
+        Object.keys(stationGrid).forEach(function (fromLocation, i) {
+
+                var toLocationsMap = stationGrid[fromLocation];
+
+                Object.keys(toLocationsMap).forEach(function (toLocation) {
+                    var totalCount = toLocationsMap[toLocation];
+
+                    var fromLonLat = pointTextToLonLat(fromLocation);
+                    var fromPoint = albersProjection(fromLonLat)
+                    var toLonLat = pointTextToLonLat(toLocation)
+                    var toPoint = albersProjection(toLonLat)
+
+
+                    if (totalCount > 200 && fromPoint[0] && fromPoint[1] && toPoint[0] && toPoint [1]) {
+                        svg.append("line")
+                            .attr('x1', fromPoint[0])
+                            .attr('y1', fromPoint[1])
+                            .attr('x2', toPoint[0])
+                            .attr('y2', toPoint[1])
+                            .attr('stroke-width', 1)
+                            .attr('stroke', '#810049')
+                            // // .attr('stroke', colorScale(d.count))
+                            // .style('stoke', 'black')
+                            // .style('stroke-opacity', 0.8)
+                            .style('stroke-opacity', opacityScale(totalCount))
+                    }
+
+
+                })
+
+        })
+
+
+
+
+
+
+        }
+    )
+
+
+</script>
